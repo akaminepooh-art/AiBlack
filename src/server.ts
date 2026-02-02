@@ -38,7 +38,8 @@ import routes from './routes';
 console.log('[3/6] Routes imported');
 
 // 設定・ユーティリティ
-import { validateEnvironment, env } from './config/environment';
+//import { validateEnvironment, env } from './config/environment';
+import { env } from './config/environment';
 import { logger } from './utils/logger';
 
 console.log('[4/6] Config imported');
