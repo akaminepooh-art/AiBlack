@@ -157,7 +157,7 @@ export class IndicatorService {
   /**
    * インジケーターを計算
    */
-  async calculate(
+async calculate(
     indicator: string,
     candles: Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }>,
     parameters?: Record<string, any>
@@ -167,7 +167,19 @@ export class IndicatorService {
 
       // Python スクリプトを実行
       const pythonPath = env.pythonPath || 'python3';
-      const scriptPath = path.join(process.cwd(), 'python-indicators', 'calculate.py');
+      
+      // Render環境では /opt/render/project/ がルート
+      // ローカル環境では process.cwd() がプロジェクトルート
+      // どちらの場合も python-indicators/calculate.py を正しく指すようにする
+      const projectRoot = process.cwd().endsWith('dist') 
+        ? path.join(process.cwd(), '..')  // dist フォルダ内で実行された場合
+        : process.cwd();  // プロジェクトルートで実行された場合
+      
+      const scriptPath = path.join(projectRoot, 'python-indicators', 'calculate.py');
+      
+      logger.info(`Python script path: ${scriptPath}`);
+      logger.info(`Python path: ${pythonPath}`);
+      logger.info(`Current working directory: ${process.cwd()}`);
 
       const result = await this.executePython(pythonPath, scriptPath, {
         indicator,
@@ -181,6 +193,7 @@ export class IndicatorService {
       throw error;
     }
   }
+
 
   /**
    * Python スクリプトを実行
