@@ -780,20 +780,60 @@ async function addIndicator() {
 }
 
 // ===== Show Parameter Dialog =====
+// ===== Show Parameter Dialog =====
 async function showParameterDialog(indicatorName, preloadedMetadata = null, currentParams = null, isEditMode = false) {
     try {
+        console.log(`showParameterDialog called: ${indicatorName}, isEditMode: ${isEditMode}`);
+        
         // インジケーターのメタデータを取得
         let indicatorMetadata = preloadedMetadata || availableIndicators.find(ind => ind.name === indicatorName);
         
         if (!indicatorMetadata) {
+            console.log(`Metadata not found in availableIndicators, fetching from API for ${indicatorName}`);
+            
             // フォールバック: APIから直接取得
             const response = await fetch(`${API_BASE}/indicator/metadata/${indicatorName}`);
-            const data = await response.json();
-            if (data.success && data.indicator) {
-                indicatorMetadata = data.indicator;
-            } else {
-                throw new Error('Failed to load indicator metadata');
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
+            
+            const result = await response.json();
+            console.log(`API response for ${indicatorName}:`, result);
+            
+            if (result.success && result.data) {
+                // APIから取得したメタデータを適切な形式に変換
+                const apiMetadata = result.data;
+                indicatorMetadata = {
+                    name: apiMetadata.name,
+                    displayName: apiMetadata.fullName,
+                    version: '1.0.0', // デフォルトバージョン
+                    parameters: apiMetadata.parameters || []
+                };
+            } else {
+                throw new Error('Failed to load indicator metadata from API');
+            }
+        }
+        
+        console.log(`Using metadata for ${indicatorName}:`, indicatorMetadata);
+        
+        // メタデータが不完全な場合、INDICATOR_CONFIGSからフォールバック
+        if (!indicatorMetadata.parameters || indicatorMetadata.parameters.length === 0) {
+            console.warn(`No parameters in metadata, checking INDICATOR_CONFIGS for ${indicatorName}`);
+            
+            if (INDICATOR_CONFIGS && INDICATOR_CONFIGS[indicatorName]) {
+                indicatorMetadata = {
+                    name: indicatorName,
+                    displayName: INDICATOR_CONFIGS[indicatorName].displayName,
+                    version: '1.0.0',
+                    parameters: INDICATOR_CONFIGS[indicatorName].parameters || []
+                };
+            }
+        }
+        
+        // それでもパラメータがない場合
+        if (!indicatorMetadata.parameters || indicatorMetadata.parameters.length === 0) {
+            throw new Error(`No parameters defined for indicator '${indicatorName}'`);
         }
         
         // ダイアログを作成
@@ -808,7 +848,7 @@ async function showParameterDialog(indicatorName, preloadedMetadata = null, curr
         header.className = 'parameter-dialog-header';
         header.innerHTML = `
             <h3>${isEditMode ? '✏️' : '📊'} ${indicatorMetadata.displayName}</h3>
-            <p>${indicatorMetadata.name.toUpperCase()} - v${indicatorMetadata.version}${isEditMode ? ' (Editing)' : ''}</p>
+            <p>${indicatorMetadata.name.toUpperCase()} - v${indicatorMetadata.version || '1.0.0'}${isEditMode ? ' (Editing)' : ''}</p>
         `;
         dialog.appendChild(header);
         
@@ -835,7 +875,8 @@ async function showParameterDialog(indicatorName, preloadedMetadata = null, curr
         cancelBtn.onclick = () => {
             overlay.remove();
             if (!isEditMode) {
-                document.getElementById('indicatorSelect').value = '';
+                const selectElement = document.getElementById('indicatorSelect');
+                if (selectElement) selectElement.value = '';
             }
         };
         
@@ -844,6 +885,7 @@ async function showParameterDialog(indicatorName, preloadedMetadata = null, curr
         actionBtn.textContent = isEditMode ? '💾 Update Indicator' : '✅ Add Indicator';
         actionBtn.onclick = async () => {
             const params = getParameterValues(fieldsContainer);
+            console.log(`${isEditMode ? 'Updating' : 'Adding'} indicator ${indicatorName} with params:`, params);
             overlay.remove();
             
             if (isEditMode) {
@@ -867,7 +909,8 @@ async function showParameterDialog(indicatorName, preloadedMetadata = null, curr
             if (e.key === 'Escape') {
                 overlay.remove();
                 if (!isEditMode) {
-                    document.getElementById('indicatorSelect').value = '';
+                    const selectElement = document.getElementById('indicatorSelect');
+                    if (selectElement) selectElement.value = '';
                 }
                 document.removeEventListener('keydown', escHandler);
             }
@@ -877,9 +920,11 @@ async function showParameterDialog(indicatorName, preloadedMetadata = null, curr
     } catch (error) {
         console.error('Failed to show parameter dialog:', error);
         alert(`⚠️ Error: ${error.message}`);
-        document.getElementById('indicatorSelect').value = '';
+        const selectElement = document.getElementById('indicatorSelect');
+        if (selectElement) selectElement.value = '';
     }
 }
+
 
 // ===== Create Parameter Field =====
 function createParameterField(param, currentValue = null) {
