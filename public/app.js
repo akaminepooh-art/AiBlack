@@ -25,7 +25,8 @@ let askAIAbortController = null; // Ask AI用AbortController
 let askAIConversationHistory = []; // Ask AI会話履歴
 
 // ===== API Configuration =====
-const API_BASE = 'http://localhost:3001/api';
+//const API_BASE = 'http://localhost:3001/api';
+const API_BASE = window.location.origin + '/api';
 
 // ===== Indicator Configuration =====
 const INDICATOR_CONFIGS = {
