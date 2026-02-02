@@ -74,10 +74,11 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 // サーバー起動
-const PORT = env.PORT;
-const HOST = env.HOST;
+// Renderは自動的にPORTを設定するため、process.env.PORTを優先
+const PORT = parseInt(process.env.PORT || env.PORT?.toString() || '10000', 10);
+const HOST = process.env.RENDER ? '0.0.0.0' : (env.HOST || 'localhost');
 
-app.listen(PORT, () => {
+app.listen(PORT, HOST, () => {
   logger.info('='.repeat(50));
   logger.info('Trading Platform Server Started');
   logger.info('='.repeat(50));
