@@ -36,7 +36,7 @@ router.get('/metadata', async (_req: Request, res: Response): Promise<void> => {
  * GET /api/indicator/metadata/:name
  * 個別インジケーターのメタデータを取得
  */
-router.get('/metadata/:name', async (req: Request, res: Response): Promise<void> => {
+router.get('/metadata/:name', async (req: Request<{ name: string }>, res: Response): Promise<void> => {
   try {
     const { name } = req.params;
     const metadata = await indicatorService.getAllMetadata();
@@ -55,7 +55,8 @@ router.get('/metadata/:name', async (req: Request, res: Response): Promise<void>
       data: metadata[name]
     });
   } catch (error) {
-    logger.error(`Failed to get metadata for indicator ${req.params.name}:`, error);
+    const indicatorName = req.params.name;
+    logger.error(`Failed to get metadata for indicator ${indicatorName}:`, error);
     res.status(500).json({
       success: false,
       error: 'Failed to retrieve indicator metadata',
