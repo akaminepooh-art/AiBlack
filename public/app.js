@@ -380,28 +380,97 @@ async function loadAvailableIndicators() {
     try {
         console.log('Loading available indicators...');
         const response = await fetch(`${API_BASE}/indicator/metadata`);
+        const result = await response.json();
         
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
+        console.log('Indicators metadata:', result);
         
-        const data = await response.json();
-        console.log('Indicators metadata:', data);
-        
-        if (data.success && data.indicators) {
-            availableIndicators = data.indicators;
-            populateIndicatorSelect(data.indicators);
-            console.log(`✅ Loaded ${data.indicators.length} indicators`);
-        } else {
+        // レスポンス形式のチェック
+        if (!result || typeof result !== 'object') {
             throw new Error('Invalid response format');
         }
+        
+        // success プロパティをチェック
+        if (result.success === false) {
+            throw new Error(result.message || 'Failed to load indicators');
+        }
+        
+        // data プロパティからメタデータを取得
+        const metadata = result.data || result;
+        
+        // メタデータが空でないかチェック
+        if (!metadata || typeof metadata !== 'object' || Object.keys(metadata).length === 0) {
+            throw new Error('No indicators available');
+        }
+        
+        // INDICATOR_CONFIGSを更新
+        Object.keys(metadata).forEach(key => {
+            const indicator = metadata[key];
+            INDICATOR_CONFIGS[key] = {
+                name: indicator.name,
+                displayName: indicator.fullName,
+                category: indicator.category,
+                parameters: indicator.parameters || []
+            };
+        });
+        
+        console.log(`✅ Loaded ${Object.keys(metadata).length} indicators`);
+        console.log('Available indicators:', Object.keys(INDICATOR_CONFIGS));
+        
     } catch (error) {
         console.error('Failed to load indicators:', error);
-        // フォールバック: 固定のINDICATOR_CONFIGSを使用
         console.warn('⚠️ Falling back to static INDICATOR_CONFIGS');
-        populateIndicatorSelectFallback();
+        
+        // 静的な設定をフォールバック
+        if (!INDICATOR_CONFIGS || Object.keys(INDICATOR_CONFIGS).length === 0) {
+            INDICATOR_CONFIGS = {
+                sma: {
+                    name: 'sma',
+                    displayName: 'Simple Moving Average',
+                    category: 'trend',
+                    parameters: [
+                        { name: 'period', type: 'number', default: 20, min: 2, max: 200 }
+                    ]
+                },
+                ema: {
+                    name: 'ema',
+                    displayName: 'Exponential Moving Average',
+                    category: 'trend',
+                    parameters: [
+                        { name: 'period', type: 'number', default: 20, min: 2, max: 200 }
+                    ]
+                },
+                rsi: {
+                    name: 'rsi',
+                    displayName: 'Relative Strength Index',
+                    category: 'momentum',
+                    parameters: [
+                        { name: 'period', type: 'number', default: 14, min: 2, max: 100 }
+                    ]
+                },
+                macd: {
+                    name: 'macd',
+                    displayName: 'MACD',
+                    category: 'momentum',
+                    parameters: [
+                        { name: 'fastPeriod', type: 'number', default: 12, min: 2, max: 100 },
+                        { name: 'slowPeriod', type: 'number', default: 26, min: 2, max: 100 },
+                        { name: 'signalPeriod', type: 'number', default: 9, min: 2, max: 100 }
+                    ]
+                },
+                bollinger: {
+                    name: 'bollinger',
+                    displayName: 'Bollinger Bands',
+                    category: 'volatility',
+                    parameters: [
+                        { name: 'period', type: 'number', default: 20, min: 2, max: 200 },
+                        { name: 'stdDev', type: 'number', default: 2, min: 1, max: 3 }
+                    ]
+                }
+            };
+        }
     }
 }
+
 
 // ===== Populate Indicator Select (Dynamic) =====
 function populateIndicatorSelect(indicators) {
