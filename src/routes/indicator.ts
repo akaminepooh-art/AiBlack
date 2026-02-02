@@ -14,7 +14,7 @@ const indicatorService = new IndicatorService();
  * GET /api/indicator/metadata
  * 全インジケーターのメタデータを取得
  */
-router.get('/metadata', async (req: Request, res: Response) => {
+router.get('/metadata', async (_req: Request, res: Response): Promise<void> => {
   try {
     const metadata = await indicatorService.getAllMetadata();
     
@@ -36,17 +36,18 @@ router.get('/metadata', async (req: Request, res: Response) => {
  * GET /api/indicator/metadata/:name
  * 個別インジケーターのメタデータを取得
  */
-router.get('/metadata/:name', async (req: Request, res: Response) => {
+router.get('/metadata/:name', async (req: Request, res: Response): Promise<void> => {
   try {
     const { name } = req.params;
     const metadata = await indicatorService.getAllMetadata();
     
     if (!metadata[name]) {
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
         error: 'Indicator not found',
         message: `Indicator '${name}' does not exist`
       });
+      return;
     }
     
     res.json({
@@ -67,16 +68,17 @@ router.get('/metadata/:name', async (req: Request, res: Response) => {
  * POST /api/indicator/calculate
  * インジケーターを計算
  */
-router.post('/calculate', async (req: Request, res: Response) => {
+router.post('/calculate', async (req: Request, res: Response): Promise<void> => {
   try {
     const { indicator, candles, parameters } = req.body;
 
     if (!indicator || !candles || !Array.isArray(candles)) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         error: 'Invalid request',
         message: 'Missing required fields: indicator, candles'
       });
+      return;
     }
 
     const result = await indicatorService.calculate(indicator, candles, parameters);
@@ -99,7 +101,7 @@ router.post('/calculate', async (req: Request, res: Response) => {
  * GET /api/indicator/list
  * 利用可能なインジケーターの一覧を取得
  */
-router.get('/list', async (req: Request, res: Response) => {
+router.get('/list', async (_req: Request, res: Response): Promise<void> => {
   try {
     const metadata = await indicatorService.getAllMetadata();
     const indicators = Object.keys(metadata).map(key => ({
