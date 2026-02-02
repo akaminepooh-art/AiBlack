@@ -2,28 +2,56 @@
  * Expressサーバー エントリーポイント
  */
 
+// 最初にエラーハンドリングを設定
+process.on('uncaughtException', (error: Error) => {
+  console.error('UNCAUGHT EXCEPTION:', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason: any) => {
+  console.error('UNHANDLED REJECTION:', reason);
+  process.exit(1);
+});
+
+console.log('='.repeat(50));
+console.log('SERVER INITIALIZATION START');
+console.log(`Node: ${process.version}, Platform: ${process.platform}`);
+console.log('='.repeat(50));
+
 import express, { Application } from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
+
+console.log('[1/6] Imports loaded');
 
 // ミドルウェア
 import corsMiddleware from './middleware/cors';
 import { errorHandler, notFoundHandler } from './middleware/error-handler';
 import { requestLogger } from './middleware/logger';
 
+console.log('[2/6] Middleware imported');
+
 // ルート
 import routes from './routes';
+
+console.log('[3/6] Routes imported');
 
 // 設定・ユーティリティ
 import { validateEnvironment, env } from './config/environment';
 import { logger } from './utils/logger';
 
-// 環境変数検証
-validateEnvironment();
+console.log('[4/6] Config imported');
+
+// 環境変数検証（一時的に無効化）
+// validateEnvironment();
+console.log('[5/6] Environment validation skipped for debugging');
+
+console.log('[6/6] Starting Express app creation...');
 
 // Expressアプリケーション作成
 const app: Application = express();
+
 
 // セキュリティヘッダー設定
 app.use(helmet({
