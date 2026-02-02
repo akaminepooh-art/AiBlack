@@ -45,7 +45,15 @@ console.log('[4/6] Config imported');
 
 // 環境変数検証（一時的に無効化）
 // validateEnvironment();
-console.log('[5/6] Environment validation skipped for debugging');
+//console.log('[5/6] Environment validation skipped for debugging');
+try {
+  // validateEnvironment();
+  console.log('[5/6] Environment validation completed');
+} catch (error) {
+  console.error('[5/6] Environment validation failed:', error);
+}
+
+
 
 console.log('[6/6] Starting Express app creation...');
 
