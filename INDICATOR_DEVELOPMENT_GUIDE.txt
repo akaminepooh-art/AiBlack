@@ -1,0 +1,1376 @@
+================================================================================
+AI Black Trading Platform - インジケーター開発ガイド
+================================================================================
+
+【対象読者】
+このプラットフォームについて事前知識がないAI開発者・エージェント向け
+
+【目的】
+新しいテクニカルインジケーターを開発し、プラットフォームに統合する
+
+【必須知識】
+- Python 3.12以上
+- pandas, numpy の基本操作
+- テクニカル分析の基礎知識
+
+================================================================================
+■ 1. プラットフォーム概要
+================================================================================
+
+【アーキテクチャ】
+このプラットフォームは以下の構成で動作します：
+
+1. フロントエンド（ブラウザ）
+   - HTML + JavaScript
+   - Lightweight Charts でチャート描画
+   - ユーザーがインジケーターを選択・パラメータ調整
+
+2. バックエンド（Node.js + TypeScript）
+   - Express.js サーバー
+   - Yahoo Finance API でデータ取得
+   - Python インジケーターを実行
+
+3. Pythonインジケーター（本ガイドの対象）
+   - python-indicators/standard/ ディレクトリに配置
+   - TA-Lib ラッパーを使用
+   - JSON形式でデータ入出力
+
+【動作フロー】
+User → Browser → API(/api/indicator/execute) → Python Script → API → Browser → Chart
+
+【重要な設計思想】
+- メタデータ駆動：インジケーターは自身の情報を提供
+- 固定インターフェース：全インジケーターが同じ基底クラスを継承
+- 動的UI生成：パラメータ定義からUIが自動生成される
+
+================================================================================
+■ 2. 必須ファイル構成
+================================================================================
+
+プロジェクト構造：
+```
+trading-platform/
+├── python-indicators/           # Pythonインジケーターのルート
+│   ├── indicator_interface.py   # 基底クラス（必須）
+│   ├── talib_wrapper.py         # TA-Libラッパー（必須）
+│   ├── requirements.txt         # Python依存関係
+│   └── standard/                # 標準インジケーター配置場所
+│       ├── sma.py               # 例：単純移動平均
+│       ├── ema.py               # 例：指数移動平均
+│       ├── rsi.py               # 例：RSI
+│       ├── macd.py              # 例：MACD
+│       ├── bollinger.py         # 例：ボリンジャーバンド
+│       └── your_indicator.py    # ← あなたの新規インジケーター
+│
+├── src/                         # TypeScriptバックエンド（変更不要）
+│   ├── services/
+│   │   └── python-executor.service.ts
+│   └── routes/
+│       └── indicator.ts
+│
+└── public/                      # フロントエンド（変更不要）
+    └── app.js
+```
+
+【重要】
+新規インジケーターは `python-indicators/standard/` に配置するだけ。
+フロントエンド・バックエンドの変更は不要です。
+
+================================================================================
+■ 3. 基底クラス仕様（indicator_interface.py）
+================================================================================
+
+【必須メソッド】
+
+全インジケーターは `IndicatorBase` を継承し、以下を実装します：
+
+```python
+from indicator_interface import IndicatorBase
+
+class YourIndicator(IndicatorBase):
+    def __init__(self):
+        super().__init__()
+        self.name = 'your_indicator'          # 必須：一意の識別子
+        self.version = '1.0.0'                # 必須：バージョン
+        self.display_type = 'single-line'     # 必須：表示タイプ
+        self.chart_type = 'main'              # 必須：チャート種別
+    
+    def get_metadata(self) -> dict:
+        """インジケーターの基本情報を返す"""
+        pass
+    
+    def get_parameter_definitions(self) -> list:
+        """パラメータ定義を返す（UIが自動生成される）"""
+        pass
+    
+    def validate_params(self, params: dict) -> bool:
+        """パラメータ検証（オプション）"""
+        pass
+    
+    def calculate(self, candle_data: list, params: dict) -> dict:
+        """インジケーター計算のメインロジック"""
+        pass
+```
+
+【重要な属性】
+
+1. `self.name`
+   - 型: str
+   - 例: 'sma', 'ema', 'rsi'
+   - ルール: 英小文字・数字・アンダースコアのみ
+   - 説明: API呼び出し時の識別子
+
+2. `self.version`
+   - 型: str
+   - 例: '1.0.0'
+   - フォーマット: セマンティックバージョニング
+
+3. `self.display_type`
+   - 型: str
+   - 選択肢: 'single-line' | 'multi-line' | 'histogram'
+   - 説明: チャート描画方法
+
+4. `self.chart_type`
+   - 型: str
+   - 選択肢: 'main' | 'sub'
+   - main: メインチャート（ローソク足と同じエリア）
+   - sub: サブチャート（下部の独立エリア）
+
+================================================================================
+■ 4. メソッド実装詳細
+================================================================================
+
+【4-1. get_metadata() - メタデータ提供】
+
+目的：インジケーターの基本情報を提供
+
+必須返却値：
+```python
+def get_metadata(self) -> dict:
+    return {
+        'name': self.name,                    # 識別子
+        'displayName': 'Your Indicator Name', # UI表示名
+        'version': self.version,              # バージョン
+        'displayType': self.display_type,     # 表示タイプ
+        'chartType': self.chart_type,         # チャート種別
+        'description': '説明文'               # 短い説明（オプション）
+    }
+```
+
+---
+
+【4-2. get_parameter_definitions() - パラメータ定義】
+
+目的：UIで調整可能なパラメータを定義
+
+返却値の構造：
+```python
+def get_parameter_definitions(self) -> list:
+    return [
+        {
+            'name': 'period',              # パラメータ名（内部識別子）
+            'displayName': 'Period',       # UI表示名
+            'type': 'number',              # 型（重要）
+            'default': 20,                 # デフォルト値
+            'min': 1,                      # 最小値（numberの場合）
+            'max': 200,                    # 最大値（numberの場合）
+            'step': 1,                     # 刻み幅（numberの場合）
+            'description': '期間の説明'    # ツールチップ用説明
+        },
+        {
+            'name': 'color',
+            'displayName': 'Line Color',
+            'type': 'color',               # カラーピッカー
+            'default': '#2196F3',          # HEX形式
+            'description': 'ライン色'
+        },
+        # 必要に応じて追加
+    ]
+```
+
+【サポートされるパラメータ型】
+
+1. **number** - 数値入力
+   必須フィールド: name, type, default
+   推奨フィールド: min, max, step
+   UIレンダリング: <input type="number">
+
+2. **color** - カラーピッカー
+   必須フィールド: name, type, default
+   デフォルト形式: '#RRGGBB'
+   UIレンダリング: <input type="color">
+
+3. **select** - ドロップダウン選択
+   必須フィールド: name, type, default, options
+   options形式: [{'value': 'sma', 'label': 'SMA'}, ...]
+   UIレンダリング: <select>
+
+---
+
+【4-3. validate_params() - パラメータ検証（オプション）】
+
+目的：ユーザー入力値の妥当性検証
+
+実装例：
+```python
+def validate_params(self, params: dict) -> bool:
+    period = params.get('period', 20)
+    
+    # 型チェック
+    if not isinstance(period, int):
+        return False
+    
+    # 範囲チェック
+    if period < 1 or period > 200:
+        return False
+    
+    # MACD等の複雑な検証例
+    if 'fastPeriod' in params and 'slowPeriod' in params:
+        if params['fastPeriod'] >= params['slowPeriod']:
+            return False
+    
+    return True
+```
+
+エラー時の挙動：
+- False返却 → API が HTTP 400 エラーを返す
+- 実装しない場合 → 検証スキップ（デフォルトTrue）
+
+---
+
+【4-4. calculate() - 計算ロジック（最重要）】
+
+目的：インジケーターの計算を実行
+
+**入力パラメータ：**
+
+1. `candle_data: list[dict]`
+   - ローソク足データの配列
+   - 各要素の構造：
+     ```python
+     {
+         'time': 1234567890,   # Unix timestamp（秒）
+         'open': 150.25,       # 始値
+         'high': 152.50,       # 高値
+         'low': 149.80,        # 安値
+         'close': 151.30,      # 終値
+         'volume': 1000000     # 出来高
+     }
+     ```
+   - データは**昇順（古い→新しい）**
+   - 長さ: 通常 60〜500本程度
+
+2. `params: dict`
+   - ユーザーが設定したパラメータ
+   - 例: {'period': 20, 'color': '#2196F3'}
+   - get_parameter_definitions() で定義した名前で取得
+
+**返却値の構造（型によって異なる）：**
+
+■ single-line（単一ライン）の場合：
+
+```python
+def calculate(self, candle_data: list, params: dict) -> dict:
+    # ... 計算処理 ...
+    
+    return {
+        'success': True,
+        'displayType': 'single-line',
+        'values': [
+            {'time': 1234567890, 'value': 150.5},
+            {'time': 1234567920, 'value': 151.2},
+            # ... NaN/Noneは含めない
+        ],
+        'lineConfig': {
+            'color': params.get('color', '#2196F3'),
+            'lineWidth': params.get('lineWidth', 2),
+            'lineStyle': 'solid',  # 'solid' | 'dashed' | 'dotted'
+            'title': f'SMA({period})'
+        },
+        'metadata': {  # オプション：追加情報
+            'period': period,
+            'calculatedPoints': len(values)
+        }
+    }
+```
+
+■ multi-line（複数ライン）の場合：
+
+```python
+def calculate(self, candle_data: list, params: dict) -> dict:
+    # 例：Bollinger Bands（上限・中央・下限）
+    return {
+        'success': True,
+        'displayType': 'multi-line',
+        'renderType': 'multi-line',
+        'values': [
+            {
+                'time': 1234567890,
+                'lines': {
+                    'upper': 155.0,
+                    'middle': 150.0,
+                    'lower': 145.0
+                }
+            },
+            # ...
+        ],
+        'lineDefinitions': {
+            'upper': {
+                'label': 'Upper Band',
+                'color': '#FF5252',
+                'lineWidth': 1,
+                'lineStyle': 'solid'
+            },
+            'middle': {
+                'label': 'Middle (SMA)',
+                'color': '#2196F3',
+                'lineWidth': 2,
+                'lineStyle': 'dashed'
+            },
+            'lower': {
+                'label': 'Lower Band',
+                'color': '#66BB6A',
+                'lineWidth': 1,
+                'lineStyle': 'solid'
+            }
+        },
+        'metadata': { ... }
+    }
+```
+
+■ histogram（ヒストグラム）の場合：
+
+```python
+def calculate(self, candle_data: list, params: dict) -> dict:
+    # 例：MACD Histogram
+    return {
+        'success': True,
+        'displayType': 'histogram',
+        'values': [
+            {
+                'time': 1234567890,
+                'value': 2.5,
+                'color': '#26a69a'  # 正の値は緑
+            },
+            {
+                'time': 1234567920,
+                'value': -1.2,
+                'color': '#ef5350'  # 負の値は赤
+            },
+            # ...
+        ],
+        'metadata': { ... }
+    }
+```
+
+【重要な注意事項】
+
+1. **NaN/Null値の除外**
+   - numpy.isnan() でチェック
+   - 無効な値は results に含めない
+   ```python
+   if not np.isnan(value):
+       values.append({'time': ..., 'value': float(value)})
+   ```
+
+2. **time フィールドは整数型**
+   ```python
+   'time': int(candle_data[i]['time'])
+   ```
+
+3. **値は float 型に変換**
+   ```python
+   'value': float(value)
+   ```
+
+4. **エラー処理**
+   ```python
+   try:
+       # 計算処理
+   except Exception as e:
+       return {
+           'success': False,
+           'error': {
+               'type': 'CalculationError',
+               'message': str(e)
+           }
+       }
+   ```
+
+================================================================================
+■ 5. TA-Lib ラッパーの使用方法
+================================================================================
+
+プラットフォームには TA-Lib のラッパーが用意されています。
+
+【インポート】
+```python
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from talib_wrapper import TALibWrapper
+```
+
+【利用可能な関数】
+
+■ 移動平均系
+- `TALibWrapper.SMA(close_prices, timeperiod=30)` - 単純移動平均
+- `TALibWrapper.EMA(close_prices, timeperiod=30)` - 指数移動平均
+- `TALibWrapper.WMA(close_prices, timeperiod=30)` - 加重移動平均
+
+■ モメンタム系
+- `TALibWrapper.RSI(close_prices, timeperiod=14)` - RSI
+- `TALibWrapper.STOCH(high, low, close, ...)` - ストキャスティクス
+- `TALibWrapper.CCI(high, low, close, timeperiod=14)` - CCI
+- `TALibWrapper.MOM(close_prices, timeperiod=10)` - モメンタム
+
+■ トレンド系
+- `TALibWrapper.MACD(close_prices, fastperiod=12, slowperiod=26, signalperiod=9)`
+  返り値: (macd, signal, histogram)
+- `TALibWrapper.ADX(high, low, close, timeperiod=14)` - ADX
+
+■ ボラティリティ系
+- `TALibWrapper.BBANDS(close_prices, timeperiod=20, nbdevup=2, nbdevdn=2)`
+  返り値: (upper, middle, lower)
+- `TALibWrapper.ATR(high, low, close, timeperiod=14)` - ATR
+
+■ 出来高系
+- `TALibWrapper.OBV(close_prices, volume)` - OBV
+
+【使用例】
+```python
+import pandas as pd
+import numpy as np
+from talib_wrapper import TALibWrapper
+
+def calculate(self, candle_data: list, params: dict) -> dict:
+    # DataFrameに変換
+    df = pd.DataFrame(candle_data)
+    
+    # パラメータ取得
+    period = params.get('period', 20)
+    
+    # TA-Lib関数呼び出し
+    close_array = df['close'].values
+    sma_values = TALibWrapper.SMA(close_array, timeperiod=period)
+    
+    # 結果を整形
+    values = []
+    for i, value in enumerate(sma_values):
+        if not np.isnan(value):
+            values.append({
+                'time': int(candle_data[i]['time']),
+                'value': float(value)
+            })
+    
+    return {
+        'success': True,
+        'displayType': 'single-line',
+        'values': values,
+        # ...
+    }
+```
+
+================================================================================
+■ 6. 完全な実装例
+================================================================================
+
+【例1: 単純移動平均（SMA）- single-line】
+
+ファイル名: python-indicators/standard/sma.py
+
+```python
+"""
+Simple Moving Average (SMA) Indicator
+単純移動平均インジケーター
+"""
+
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import pandas as pd
+import numpy as np
+from indicator_interface import IndicatorBase, main_runner
+from talib_wrapper import TALibWrapper
+
+
+class SMAIndicator(IndicatorBase):
+    """Simple Moving Average (SMA) インジケーター"""
+    
+    def __init__(self):
+        super().__init__()
+        self.name = 'sma'
+        self.version = '1.0.0'
+        self.display_type = 'single-line'
+        self.chart_type = 'main'
+    
+    def get_metadata(self):
+        """メタデータを返す"""
+        return {
+            'name': self.name,
+            'displayName': 'Simple Moving Average (SMA)',
+            'version': self.version,
+            'displayType': self.display_type,
+            'chartType': self.chart_type,
+            'description': 'Calculate simple moving average of closing prices'
+        }
+    
+    def get_parameter_definitions(self):
+        """パラメータ定義を返す"""
+        return [
+            {
+                'name': 'period',
+                'displayName': 'Period',
+                'type': 'number',
+                'default': 20,
+                'min': 1,
+                'max': 200,
+                'step': 1,
+                'description': 'Number of periods for moving average'
+            },
+            {
+                'name': 'color',
+                'displayName': 'Line Color',
+                'type': 'color',
+                'default': '#2196F3',
+                'description': 'Line color on chart'
+            },
+            {
+                'name': 'lineWidth',
+                'displayName': 'Line Width',
+                'type': 'number',
+                'default': 2,
+                'min': 1,
+                'max': 5,
+                'step': 1,
+                'description': 'Line thickness'
+            }
+        ]
+    
+    def validate_params(self, params: dict) -> bool:
+        """パラメータ検証"""
+        period = params.get('period', 20)
+        
+        if not isinstance(period, (int, float)):
+            return False
+        
+        if period < 1 or period > 200:
+            return False
+        
+        return True
+    
+    def calculate(self, candle_data: list, params: dict) -> dict:
+        """SMA計算"""
+        try:
+            # パラメータ取得
+            period = int(params.get('period', 20))
+            color = params.get('color', '#2196F3')
+            line_width = int(params.get('lineWidth', 2))
+            
+            # DataFrameに変換
+            df = pd.DataFrame(candle_data)
+            close_array = df['close'].values
+            
+            # SMA計算
+            sma_values = TALibWrapper.SMA(close_array, timeperiod=period)
+            
+            # 結果を整形
+            values = []
+            for i, value in enumerate(sma_values):
+                if not np.isnan(value):
+                    values.append({
+                        'time': int(candle_data[i]['time']),
+                        'value': float(value)
+                    })
+            
+            return {
+                'success': True,
+                'displayType': 'single-line',
+                'values': values,
+                'lineConfig': {
+                    'color': color,
+                    'lineWidth': line_width,
+                    'lineStyle': 'solid',
+                    'title': f'SMA({period})'
+                },
+                'metadata': {
+                    'period': period,
+                    'calculatedPoints': len(values)
+                }
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'error': {
+                    'type': 'CalculationError',
+                    'message': str(e)
+                }
+            }
+
+
+if __name__ == '__main__':
+    main_runner(SMAIndicator)
+```
+
+---
+
+【例2: RSI - single-line with levels（サブチャート）】
+
+ファイル名: python-indicators/standard/rsi.py
+
+```python
+"""
+Relative Strength Index (RSI) Indicator
+相対力指数インジケーター
+"""
+
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import pandas as pd
+import numpy as np
+from indicator_interface import IndicatorBase, main_runner
+from talib_wrapper import TALibWrapper
+
+
+class RSIIndicator(IndicatorBase):
+    """RSI インジケーター"""
+    
+    def __init__(self):
+        super().__init__()
+        self.name = 'rsi'
+        self.version = '1.0.0'
+        self.display_type = 'single-line'
+        self.chart_type = 'sub'  # サブチャートに表示
+    
+    def get_metadata(self):
+        return {
+            'name': self.name,
+            'displayName': 'Relative Strength Index (RSI)',
+            'version': self.version,
+            'displayType': self.display_type,
+            'chartType': self.chart_type,
+            'description': 'Momentum oscillator measuring speed and change of price movements'
+        }
+    
+    def get_parameter_definitions(self):
+        return [
+            {
+                'name': 'period',
+                'displayName': 'Period',
+                'type': 'number',
+                'default': 14,
+                'min': 2,
+                'max': 100,
+                'step': 1,
+                'description': 'Number of periods for RSI calculation'
+            },
+            {
+                'name': 'color',
+                'displayName': 'Line Color',
+                'type': 'color',
+                'default': '#9C27B0',
+                'description': 'RSI line color'
+            },
+            {
+                'name': 'overbought',
+                'displayName': 'Overbought Level',
+                'type': 'number',
+                'default': 70,
+                'min': 50,
+                'max': 90,
+                'step': 5,
+                'description': 'Overbought threshold'
+            },
+            {
+                'name': 'oversold',
+                'displayName': 'Oversold Level',
+                'type': 'number',
+                'default': 30,
+                'min': 10,
+                'max': 50,
+                'step': 5,
+                'description': 'Oversold threshold'
+            }
+        ]
+    
+    def calculate(self, candle_data: list, params: dict) -> dict:
+        try:
+            period = int(params.get('period', 14))
+            color = params.get('color', '#9C27B0')
+            line_width = int(params.get('lineWidth', 2))
+            overbought = float(params.get('overbought', 70))
+            oversold = float(params.get('oversold', 30))
+            
+            df = pd.DataFrame(candle_data)
+            close_array = df['close'].values
+            
+            # RSI計算
+            rsi_values = TALibWrapper.RSI(close_array, timeperiod=period)
+            
+            values = []
+            for i, value in enumerate(rsi_values):
+                if not np.isnan(value):
+                    values.append({
+                        'time': int(candle_data[i]['time']),
+                        'value': float(value)
+                    })
+            
+            current_rsi = float(rsi_values[-1]) if not np.isnan(rsi_values[-1]) else None
+            
+            return {
+                'success': True,
+                'displayType': 'single-line',
+                'values': values,
+                'lineConfig': {
+                    'color': color,
+                    'lineWidth': line_width,
+                    'lineStyle': 'solid',
+                    'title': f'RSI({period})'
+                },
+                'levels': [  # 水平基準線
+                    {'value': overbought, 'color': '#ef5350', 'style': 'dashed'},
+                    {'value': 50, 'color': '#666', 'style': 'solid'},
+                    {'value': oversold, 'color': '#66BB6A', 'style': 'dashed'}
+                ],
+                'metadata': {
+                    'period': period,
+                    'overbought': overbought,
+                    'oversold': oversold,
+                    'currentValue': current_rsi,
+                    'calculatedPoints': len(values)
+                }
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'error': {
+                    'type': 'CalculationError',
+                    'message': str(e)
+                }
+            }
+
+
+if __name__ == '__main__':
+    main_runner(RSIIndicator)
+```
+
+---
+
+【例3: Bollinger Bands - multi-line】
+
+ファイル名: python-indicators/standard/bollinger.py
+
+```python
+"""
+Bollinger Bands Indicator
+ボリンジャーバンドインジケーター
+"""
+
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import pandas as pd
+import numpy as np
+from indicator_interface import IndicatorBase, main_runner
+from talib_wrapper import TALibWrapper
+
+
+class BollingerBandsIndicator(IndicatorBase):
+    """Bollinger Bands インジケーター"""
+    
+    def __init__(self):
+        super().__init__()
+        self.name = 'bollinger'
+        self.version = '1.0.0'
+        self.display_type = 'multi-line'
+        self.chart_type = 'main'
+    
+    def get_metadata(self):
+        return {
+            'name': self.name,
+            'displayName': 'Bollinger Bands',
+            'version': self.version,
+            'displayType': self.display_type,
+            'chartType': self.chart_type,
+            'description': 'Volatility indicator with upper and lower bands'
+        }
+    
+    def get_parameter_definitions(self):
+        return [
+            {
+                'name': 'period',
+                'displayName': 'Period',
+                'type': 'number',
+                'default': 20,
+                'min': 2,
+                'max': 100,
+                'step': 1,
+                'description': 'Moving average period'
+            },
+            {
+                'name': 'stdDev',
+                'displayName': 'Standard Deviation',
+                'type': 'number',
+                'default': 2.0,
+                'min': 0.5,
+                'max': 5.0,
+                'step': 0.5,
+                'description': 'Number of standard deviations'
+            }
+        ]
+    
+    def calculate(self, candle_data: list, params: dict) -> dict:
+        try:
+            period = int(params.get('period', 20))
+            std_dev = float(params.get('stdDev', 2.0))
+            
+            df = pd.DataFrame(candle_data)
+            close_array = df['close'].values
+            
+            # Bollinger Bands計算
+            upper, middle, lower = TALibWrapper.BBANDS(
+                close_array,
+                timeperiod=period,
+                nbdevup=std_dev,
+                nbdevdn=std_dev
+            )
+            
+            # 結果を整形
+            upper_values = []
+            middle_values = []
+            lower_values = []
+            
+            for i in range(len(candle_data)):
+                if not np.isnan(middle[i]):
+                    time_val = int(candle_data[i]['time'])
+                    
+                    upper_values.append({
+                        'time': time_val,
+                        'value': float(upper[i])
+                    })
+                    middle_values.append({
+                        'time': time_val,
+                        'value': float(middle[i])
+                    })
+                    lower_values.append({
+                        'time': time_val,
+                        'value': float(lower[i])
+                    })
+            
+            # multi-line形式で返す
+            values = []
+            for i in range(len(middle_values)):
+                values.append({
+                    'time': middle_values[i]['time'],
+                    'lines': {
+                        'upper': upper_values[i]['value'],
+                        'middle': middle_values[i]['value'],
+                        'lower': lower_values[i]['value']
+                    }
+                })
+            
+            return {
+                'success': True,
+                'displayType': 'multi-line',
+                'renderType': 'multi-line',
+                'values': values,
+                'lineDefinitions': {
+                    'upper': {
+                        'label': 'Upper Band',
+                        'color': '#FF5252',
+                        'lineWidth': 1,
+                        'lineStyle': 'solid'
+                    },
+                    'middle': {
+                        'label': 'Middle (SMA)',
+                        'color': '#2196F3',
+                        'lineWidth': 2,
+                        'lineStyle': 'dashed'
+                    },
+                    'lower': {
+                        'label': 'Lower Band',
+                        'color': '#66BB6A',
+                        'lineWidth': 1,
+                        'lineStyle': 'solid'
+                    }
+                },
+                'metadata': {
+                    'period': period,
+                    'stdDev': std_dev,
+                    'calculatedPoints': len(middle_values)
+                }
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'error': {
+                    'type': 'CalculationError',
+                    'message': str(e)
+                }
+            }
+
+
+if __name__ == '__main__':
+    main_runner(BollingerBandsIndicator)
+```
+
+================================================================================
+■ 7. テスト方法
+================================================================================
+
+【7-1. ローカルテスト（Python単体）】
+
+```bash
+cd /path/to/trading-platform/python-indicators/standard
+
+# メタデータ取得テスト
+echo '{"mode": "metadata"}' | python3 your_indicator.py
+
+# 計算テスト（サンプルデータ）
+cat << 'EOF' | python3 your_indicator.py
+{
+  "name": "your_indicator",
+  "candleData": [
+    {"time": 1609459200, "open": 100, "high": 105, "low": 99, "close": 103, "volume": 1000},
+    {"time": 1609545600, "open": 103, "high": 108, "low": 102, "close": 106, "volume": 1200}
+  ],
+  "params": {"period": 20, "color": "#2196F3"}
+}
+EOF
+```
+
+期待される出力：
+- メタデータモード：JSON形式のメタデータ
+- 計算モード：success: true と values 配列
+
+---
+
+【7-2. サーバー経由テスト】
+
+1. サーバー起動
+```bash
+cd /path/to/trading-platform
+npm start
+```
+
+2. メタデータ取得
+```bash
+curl http://localhost:3001/api/indicator/metadata/your_indicator
+```
+
+3. 実際の計算テスト
+```bash
+curl -X POST http://localhost:3001/api/indicator/execute \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "your_indicator",
+    "candleData": [...],
+    "params": {"period": 20}
+  }'
+```
+
+---
+
+【7-3. ブラウザテスト】
+
+1. http://localhost:3001 にアクセス
+2. Market Data をロード（例：USD/JPY, 5 Minutes, 1 Day）
+3. Indicator セレクトから新規インジケーターを選択
+4. Add Indicator ボタンをクリック
+5. パラメータダイアログで値を調整
+6. チャートに正しく描画されることを確認
+
+================================================================================
+■ 8. デバッグのヒント
+================================================================================
+
+【よくあるエラーと対処法】
+
+1. **IndentationError**
+   原因：Pythonのインデントが不正
+   対処：4スペース統一、タブ混在を避ける
+
+2. **"Indicator not found"**
+   原因：ファイル名とself.nameが一致していない
+   対処：ファイル名を `{self.name}.py` に統一
+
+3. **"NaN values in chart"**
+   原因：計算結果に NaN が含まれている
+   対処：np.isnan() でフィルタリング
+
+4. **"Time scale error"**
+   原因：time フィールドが文字列または float
+   対処：int() でキャスト
+
+5. **"Empty values array"**
+   原因：全ての値がNaNでフィルタされた
+   対処：
+   - データ長がperiodより短い
+   - 計算ロジックのバグ
+   - TA-Lib関数の引数ミス
+
+【デバッグ用ログ出力】
+
+```python
+import sys
+
+def calculate(self, candle_data: list, params: dict) -> dict:
+    # デバッグ情報を stderr に出力（サーバーログに記録される）
+    print(f"DEBUG: candle_data length = {len(candle_data)}", file=sys.stderr)
+    print(f"DEBUG: params = {params}", file=sys.stderr)
+    
+    try:
+        # ... 計算処理 ...
+        print(f"DEBUG: calculated {len(values)} values", file=sys.stderr)
+    except Exception as e:
+        print(f"ERROR: {str(e)}", file=sys.stderr)
+        raise
+```
+
+サーバーログで確認：
+```bash
+tail -f /path/to/trading-platform/logs/server.log
+```
+
+================================================================================
+■ 9. チェックリスト
+================================================================================
+
+新規インジケーター実装時の確認項目：
+
+□ ファイル名が `{name}.py` と一致している
+□ IndicatorBase を継承している
+□ __init__() で name, version, display_type, chart_type を設定
+□ get_metadata() を実装
+□ get_parameter_definitions() を実装（最低1つのパラメータ）
+□ calculate() を実装
+□ 返却値に 'success': True を含む
+□ values 配列に time と value を含む
+□ NaN値をフィルタリングしている
+□ time フィールドを int() でキャスト
+□ value フィールドを float() でキャスト
+□ エラーハンドリング（try-except）を実装
+□ if __name__ == '__main__': main_runner(YourIndicator) を記述
+□ Pythonの構文エラーがない（python3 -m py_compile で確認）
+□ ローカルテストで正常動作を確認
+□ サーバー経由テストで正常動作を確認
+□ ブラウザでパラメータダイアログが表示される
+□ チャートに正しく描画される
+
+================================================================================
+■ 10. 配置とデプロイ
+================================================================================
+
+【ファイル配置】
+
+1. 新規インジケーターファイルを配置
+```bash
+cp your_indicator.py /path/to/trading-platform/python-indicators/standard/
+```
+
+2. 権限設定（必要に応じて）
+```bash
+chmod +x /path/to/trading-platform/python-indicators/standard/your_indicator.py
+```
+
+3. サーバー再起動
+```bash
+cd /path/to/trading-platform
+# 既存サーバーを停止（Ctrl+C）
+npm start
+```
+
+4. ブラウザでハードリロード
+```
+Ctrl + Shift + R (Windows/Linux)
+Cmd + Shift + R (Mac)
+```
+
+【重要】
+- フロントエンド（public/app.js）の変更は不要
+- バックエンド（src/）の変更は不要
+- Pythonファイルを配置するだけで自動的にUIに反映される
+
+================================================================================
+■ 11. トラブルシューティング
+================================================================================
+
+【Q1: インジケーターがセレクトボックスに表示されない】
+
+A: 以下を確認：
+1. ファイルが `python-indicators/standard/` に配置されているか
+2. ファイル名が `{self.name}.py` と一致しているか
+3. 構文エラーがないか（python3 -c "import your_indicator"）
+4. サーバーを再起動したか
+5. ブラウザをハードリロードしたか
+
+デバッグ：
+```bash
+curl http://localhost:3001/api/indicator/metadata
+# 新規インジケーターが含まれているか確認
+```
+
+---
+
+【Q2: "Python process timeout" エラー】
+
+A: 計算に30秒以上かかっている
+対処：
+- データ点数を減らす
+- 計算ロジックを最適化
+- 不要なループを削減
+
+---
+
+【Q3: "Invalid response format" エラー】
+
+A: 返却値の構造が不正
+対処：
+- 'success': True を含めているか
+- 'values' が配列か
+- 各要素に 'time' と 'value' があるか
+
+---
+
+【Q4: チャートに何も表示されない】
+
+A: 以下を確認：
+1. values 配列が空でないか
+2. NaN値をフィルタしているか
+3. time フィールドが int 型か
+4. chartType が 'main' または 'sub' か
+
+デバッグ：
+```python
+print(f"Values count: {len(values)}", file=sys.stderr)
+print(f"First value: {values[0] if values else 'EMPTY'}", file=sys.stderr)
+```
+
+================================================================================
+■ 12. 参考リソース
+================================================================================
+
+【プロジェクト内ドキュメント】
+- README.md - プロジェクト概要
+- INDICATOR_UPGRADE_GUIDE.md - インジケーター改修ガイド
+- RELEASE_NOTES.md - リリースノート
+- PHASE4_VERIFICATION_REPORT.md - Phase 4 検証レポート
+
+【既存インジケーター（参考実装）】
+- python-indicators/standard/sma.py - 最もシンプルな例
+- python-indicators/standard/rsi.py - サブチャート + レベル線
+- python-indicators/standard/bollinger.py - multi-line
+- python-indicators/standard/macd.py - multi-line + histogram
+
+【外部リソース】
+- TA-Lib Documentation: https://ta-lib.github.io/ta-lib-python/
+- Lightweight Charts: https://tradingview.github.io/lightweight-charts/
+- pandas Documentation: https://pandas.pydata.org/docs/
+
+================================================================================
+■ 13. 開発フローの推奨手順
+================================================================================
+
+【ステップ1: 要件定義】
+- インジケーター名を決定（英小文字）
+- 表示タイプを決定（single-line / multi-line / histogram）
+- チャート種別を決定（main / sub）
+- 必要なパラメータをリストアップ
+
+【ステップ2: 実装】
+1. sma.py を your_indicator.py にコピー
+2. クラス名変更（SMAIndicator → YourIndicator）
+3. __init__() のプロパティ変更
+4. get_metadata() 更新
+5. get_parameter_definitions() 更新
+6. calculate() 実装
+
+【ステップ3: ローカルテスト】
+1. 構文チェック（python3 -c "import your_indicator"）
+2. メタデータ取得テスト
+3. サンプルデータで計算テスト
+
+【ステップ4: サーバーテスト】
+1. ファイル配置
+2. サーバー再起動
+3. API経由でメタデータ取得
+4. API経由で計算実行
+
+【ステップ5: ブラウザテスト】
+1. ブラウザアクセス
+2. Market Data ロード
+3. インジケーター追加
+4. パラメータ調整
+5. チャート表示確認
+
+【ステップ6: デプロイ】
+1. 本番環境にファイルコピー
+2. サーバー再起動
+3. 動作確認
+
+================================================================================
+■ 14. 制約事項と注意点
+================================================================================
+
+【技術的制約】
+
+1. **実行タイムアウト**
+   - Python プロセスは30秒でタイムアウト
+   - 複雑な計算は事前最適化が必要
+
+2. **データサイズ**
+   - ローソク足データは通常 60〜500本
+   - メモリ使用量に注意
+
+3. **外部通信禁止**
+   - インジケーターからの外部API呼び出し不可
+   - 全てローカルデータで計算
+
+4. **ファイルI/O制限**
+   - インジケーターからのファイル読み書き非推奨
+   - 全てメモリ内で処理
+
+【セキュリティ注意】
+
+1. **入力検証**
+   - ユーザー入力（params）は必ず検証
+   - SQL インジェクション等のリスクはないが、型チェック必須
+
+2. **エラーメッセージ**
+   - システムパス等の機密情報を含めない
+   - ユーザーフレンドリーなメッセージ
+
+3. **リソース管理**
+   - 無限ループを避ける
+   - メモリリークに注意
+
+【ベストプラクティス】
+
+1. **命名規則**
+   - インジケーター名: snake_case（例：awesome_oscillator）
+   - パラメータ名: camelCase（例：fastPeriod）
+   - クラス名: PascalCase（例：AwesomeOscillatorIndicator）
+
+2. **コメント**
+   - 複雑な計算ロジックにはコメント記述
+   - 日本語・英語どちらでも可
+
+3. **パフォーマンス**
+   - numpy/pandas のベクトル演算を活用
+   - 不要なループは避ける
+
+4. **互換性**
+   - Python 3.12 以上で動作確認
+   - TA-Lib の関数名は大文字（例：SMA, EMA）
+
+================================================================================
+■ 15. サンプルタスク
+================================================================================
+
+【タスク例1: Awesome Oscillator の実装】
+
+要件：
+- Bill Williams の Awesome Oscillator を実装
+- 5期間と34期間の単純移動平均の差
+- ヒストグラム表示
+- サブチャート配置
+
+実装手順：
+1. ファイル作成：python-indicators/standard/awesome_oscillator.py
+2. クラス名：AwesomeOscillatorIndicator
+3. name: 'awesome_oscillator'
+4. display_type: 'histogram'
+5. chart_type: 'sub'
+6. パラメータ：fastPeriod (default: 5), slowPeriod (default: 34)
+7. 計算：SMA(high+low/2, 5) - SMA(high+low/2, 34)
+8. 色：正の値は緑、負の値は赤
+
+---
+
+【タスク例2: Stochastic Oscillator の実装】
+
+要件：
+- George Lane のストキャスティクスを実装
+- %K と %D の2本のライン
+- サブチャート配置
+- 0-100 のレンジ
+
+実装手順：
+1. ファイル作成：python-indicators/standard/stochastic.py
+2. display_type: 'multi-line'
+3. chart_type: 'sub'
+4. パラメータ：kPeriod (14), dPeriod (3), slowing (3)
+5. TA-Lib の STOCH 関数を使用
+6. levels: 80 (overbought), 20 (oversold)
+
+================================================================================
+■ 16. FAQ（よくある質問）
+================================================================================
+
+Q: 複数の時間足に対応する必要がありますか？
+A: いいえ。プラットフォームが時間足を処理し、適切なデータを渡します。
+
+Q: リアルタイム更新に対応する必要がありますか？
+A: いいえ。現在は静的データの計算のみです。
+
+Q: データベースアクセスは可能ですか？
+A: いいえ。全てメモリ内で処理してください。
+
+Q: 他のインジケーターの結果を利用できますか？
+A: いいえ。各インジケーターは独立して動作します。
+
+Q: カスタムライブラリを追加できますか？
+A: はい。requirements.txt に追加し、pip install してください。
+
+Q: 日本語のパラメータ名は使えますか？
+A: displayName は日本語可、name（内部識別子）は英語のみ。
+
+Q: インジケーターを削除するには？
+A: ファイルを削除してサーバー再起動。
+
+Q: バージョンアップ時の互換性は？
+A: 基底クラスのインターフェースは固定。安全にアップデート可能。
+
+================================================================================
+■ 17. まとめ
+================================================================================
+
+【このガイドで学んだこと】
+✓ プラットフォームのアーキテクチャ
+✓ インジケーターの基本構造
+✓ 必須メソッドの実装方法
+✓ TA-Lib ラッパーの使用方法
+✓ テスト・デバッグ手順
+✓ デプロイ方法
+
+【重要なポイント】
+1. IndicatorBase を継承する
+2. 4つのメソッドを実装する（metadata, parameters, validate, calculate）
+3. NaN値をフィルタする
+4. time を int、value を float にキャスト
+5. エラーハンドリングを実装する
+6. Pythonファイルを配置するだけで動作する
+
+【次のステップ】
+1. 既存インジケーター（sma.py, rsi.py）を読む
+2. 簡単なインジケーターを実装してみる
+3. ローカルテストで動作確認
+4. サーバー経由テスト
+5. ブラウザで動作確認
+
+【サポート】
+質問がある場合は、プロジェクトの GitHub Issues または
+ドキュメントを参照してください。
+
+================================================================================
+文書バージョン: 1.0.0
+最終更新日: 2026-01-29
+対象プラットフォームバージョン: Phase 4.5（動的UI完成版）
+================================================================================

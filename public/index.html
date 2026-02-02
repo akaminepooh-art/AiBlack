@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI BLACK ScopeZX — Market Viewer</title>
+    <script>
+        // Authentication Check
+        const AUTH_KEY = 'ai_black_scopezx_authenticated';
+        if (localStorage.getItem(AUTH_KEY) !== 'true') {
+            window.location.href = 'auth.html';
+        }
+    </script>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <img src="logo.svg" alt="AI BLACK" style="width: 32px; height: 32px;">
+                <h1 class="header-title">AI BLACK ScopeZX</h1>
+                <p class="header-subtitle">— Market Viewer</p>
+            </div>
+            <div class="header-status">
+                <div class="status-indicator">
+                    <span class="status-dot" id="apiStatusDot"></span>
+                    <span id="apiStatus">API Disconnected</span>
+                </div>
+                <button id="logoutBtn" class="btn-logout" title="ログアウト">
+                    🚪 ログアウト
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Container -->
+        <div class="main-container">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <!-- Market Data Section -->
+                <section class="sidebar-section">
+                    <h2 class="section-title">Market Data</h2>
+                    
+                    <div class="form-group">
+                        <label class="form-label" for="symbolSelect">Symbol</label>
+                        <select id="symbolSelect" class="form-select">
+                            <optgroup label="外国為替 (Forex)">
+                                <option value="USDJPY=X" selected>USD/JPY (USDJPY=X)</option>
+                                <option value="GBPJPY=X">GBP/JPY (GBPJPY=X)</option>
+                                <option value="GBPUSD=X">GBP/USD (GBPUSD=X)</option>
+                                <option value="EURUSD=X">EUR/USD (EURUSD=X)</option>
+                            </optgroup>
+                            <optgroup label="CFD">
+                                <option value="^N225">Nikkei 225 (^N225)</option>
+                                <option value="^GSPC">S&P 500 (^GSPC)</option>
+                                <option value="^IXIC">NASDAQ (^IXIC)</option>
+                                <option value="GC=F">Gold (GC=F)</option>
+                                <option value="SI=F">Silver (SI=F)</option>
+                                <option value="DX-Y.NYB">US Dollar Index (DX-Y.NYB)</option>
+                            </optgroup>
+                            <optgroup label="国債">
+                                <option value="^TNX">US 10-Year Treasury (^TNX)</option>
+                            </optgroup>
+                            <optgroup label="仮想通貨 (Crypto)">
+                                <option value="BTC-USD">Bitcoin (BTC-USD)</option>
+                                <option value="ETH-USD">Ethereum (ETH-USD)</option>
+                            </optgroup>
+                            <optgroup label="日本株式">
+                                <option value="7203.T">Toyota (7203.T)</option>
+                                <option value="7974.T">Nintendo (7974.T)</option>
+                            </optgroup>
+                            <optgroup label="US Stocks">
+                                <option value="AAPL">Apple (AAPL)</option>
+                                <option value="MSFT">Microsoft (MSFT)</option>
+                                <option value="GOOGL">Alphabet (GOOGL)</option>
+                                <option value="AMZN">Amazon (AMZN)</option>
+                                <option value="META">Meta (META)</option>
+                                <option value="TSLA">Tesla (TSLA)</option>
+                                <option value="NVDA">NVIDIA (NVDA)</option>
+                            </optgroup>
+                            <optgroup label="Custom">
+                                <option value="__CUSTOM__">🔍 Custom Symbol...</option>
+                            </optgroup>
+                        </select>
+                    </div>
+
+                    <!-- Custom Symbol Input (Hidden by default) -->
+                    <div class="form-group" id="customSymbolGroup" style="display: none;">
+                        <label class="form-label" for="customSymbolInput">Custom Symbol</label>
+                        <input 
+                            type="text" 
+                            id="customSymbolInput" 
+                            class="form-input" 
+                            placeholder="e.g., AAPL, BTC-USD, EURUSD=X"
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="intervalSelect">Interval</label>
+                        <select id="intervalSelect" class="form-select">
+                            <option value="1m">1 Minute</option>
+                            <option value="5m">5 Minutes</option>
+                            <option value="15m" selected>15 Minutes</option>
+                            <option value="1h">1 Hour</option>
+                            <option value="1d">1 Day</option>
+                            <option value="1wk">1 Week</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="rangeSelect">Range</label>
+                        <select id="rangeSelect" class="form-select">
+                            <option value="1d" selected>1 Day</option>
+                            <option value="5d">5 Days</option>
+                            <option value="1mo">1 Month</option>
+                            <option value="3mo">3 Months</option>
+                            <option value="6mo">6 Months</option>
+                            <option value="1y">1 Year</option>
+                            <option value="2y">2 Years</option>
+                            <option value="5y">5 Years</option>
+                        </select>
+                    </div>
+
+                    <button id="loadDataBtn" class="btn btn-primary btn-block">
+                        📥 Load Data
+                    </button>
+
+                    <div id="dataInfo" class="chart-info mt-2 text-center" style="display: none;"></div>
+                </section>
+
+                <!-- Indicators Section -->
+                <section class="sidebar-section">
+                    <h2 class="section-title">Technical Indicators</h2>
+                    
+                    <div class="indicator-select-container">
+                        <label class="form-label" for="indicatorSelect">Add Indicator</label>
+                        <select id="indicatorSelect" class="form-select">
+                            <option value="">-- Select Indicator --</option>
+                            <option value="sma">SMA - Simple Moving Average</option>
+                            <option value="ema">EMA - Exponential Moving Average</option>
+                            <option value="rsi">RSI - Relative Strength Index</option>
+                            <option value="macd">MACD - Moving Average Convergence Divergence</option>
+                            <option value="bollinger">Bollinger Bands</option>
+                            <option value="atr">ATR - Average True Range</option>
+                            <option value="adx">ADX - Average Directional Index</option>
+                        </select>
+                    </div>
+
+                    <button id="addIndicatorBtn" class="btn btn-secondary btn-block add-indicator-btn" disabled>
+                        ➕ Add Indicator
+                    </button>
+                </section>
+
+                <!-- Active Indicators Section -->
+                <section class="sidebar-section">
+                    <h2 class="section-title">Active Indicators</h2>
+                    <div id="activeIndicatorsList" class="active-indicators-list">
+                        <div class="no-indicators">No indicators added yet</div>
+                    </div>
+                </section>
+
+            </aside>
+
+            <!-- Chart Area -->
+            <main class="chart-area">
+                <div class="chart-container">
+                    <!-- Main Chart -->
+                    <div class="main-chart-wrapper">
+                        <div class="chart-header">
+                            <span class="chart-title">Candlestick Chart</span>
+                            <div class="chart-header-actions">
+                                <div class="analyze-buttons-group">
+                                    <button id="analyzeChartBtn" class="btn-analyze" title="AI Vision Analysis (Standard Mode)">
+                                        🤖 Analyze Chart
+
+                                    </button>
+                                    <button id="analyzeChartHDBtn" class="btn-analyze-hd" title="AI Vision Analysis (HD Mode - Higher Accuracy)">
+                                        🔬 Analyze (HD)
+
+                                    </button>
+                                    <button id="showLastResultBtn" class="btn-show-result" title="Show Last Analysis Result" style="display: none;">
+                                        📋 Show Last Result
+                                    </button>
+                                </div>
+                                <button id="captureChartBtn" class="btn-capture" title="Capture Chart (1024x576)">
+                                    📷 Capture
+                                </button>
+                            </div>
+                            <span class="chart-info" id="mainChartInfo">No data loaded</span>
+                        </div>
+                        <div id="mainChart"></div>
+                    </div>
+
+                    <!-- Sub Chart (for RSI, MACD) -->
+                    <div class="sub-chart-wrapper" id="subChartWrapper">
+                        <div class="chart-header">
+                            <span class="chart-title" id="subChartTitle">Oscillator</span>
+                            <span class="chart-info" id="subChartInfo">--</span>
+                        </div>
+                        <div id="subChart"></div>
+                    </div>
+
+                    <!-- Empty State -->
+                    <div class="empty-state" id="emptyState">
+                        <div class="empty-state-icon">📊</div>
+                        <div class="empty-state-title">No Data Loaded</div>
+                        <div class="empty-state-text">
+                            Select a symbol, interval, and range from the sidebar, then click "Load Data" to get started.
+                        </div>
+                    </div>
+                </div>
+            </main>
+
+            <!-- Vision AI Panel (Phase 5) -->
+            <div id="visionPanel" class="vision-panel">
+                <div class="vision-panel-header">
+                    <h3>🤖 AI Vision Analysis</h3>
+                    <button id="closeVisionPanel" class="btn-close">✕</button>
+                </div>
+
+                <!-- Vision Tabs -->
+                <div class="vision-tabs">
+                    <button id="quickAnalysisTab" class="vision-tab active">Quick Analysis</button>
+                    <button id="askAITab" class="vision-tab">Ask AI</button>
+                </div>
+
+                <!-- Quick Analysis Content -->
+                <div id="quickAnalysisContent" class="vision-content">
+                    <div id="quickAnalysisLoading" style="display: none;">
+                        <div class="loading-spinner-large"></div>
+                        <div class="loading-message">🤖 AI がチャートを分析中...</div>
+                        <div class="loading-submessage">パターン検出、トレンド分析、シナリオ作成</div>
+                        <button id="analysisCancelBtn" onclick="cancelQuickAnalysis()">キャンセル</button>
+                    </div>
+                    <div id="quickAnalysisResult" class="analysis-result"></div>
+                </div>
+
+                <!-- Ask AI Content -->
+                <div id="askAIContent" class="vision-content" style="display: none;">
+                    <!-- Image Info & Cost Warning -->
+                    <div class="ask-ai-info-section">
+                        <div class="ask-ai-image-info">
+                            <span class="image-source-icon">📊</span>
+                            <span id="askAIImageSource">画像なし - まずAnalyzeを実行してください</span>
+                        </div>
+                        <div class="ask-ai-cost-warning">
+                            <span class="warning-icon">⚠️</span>
+                            <span>質問ごとに画像を再送信します（Vision API使用）</span>
+                        </div>
+                    </div>
+
+                    <!-- Ask AI Input (上部に移動) -->
+                    <div class="ask-ai-input-container">
+                        <textarea 
+                            id="askAIQuestionInput" 
+                            class="ask-ai-input" 
+                            placeholder="チャートについて質問してください...例: 今エントリーすべきですか？"
+                            rows="2"
+                        ></textarea>
+                        <button id="sendAskAIBtn" class="btn-send-question" onclick="handleAskAI()">
+                            💬 送信
+                        </button>
+                    </div>
+
+                    <!-- Conversation History -->
+                    <div id="askAIHistory" class="conversation-history">
+                        <div class="empty-state">質問を入力してAIに聞いてみましょう</div>
+                    </div>
+
+                    <div id="askAILoading" style="display: none;">
+                        <div class="loading-spinner-large"></div>
+                        <div class="loading-message">🤖 AI が質問に回答中...</div>
+                        <div class="loading-submessage">チャートを分析して回答を生成しています</div>
+                        <button id="askAICancelBtn" onclick="cancelAskAI()">キャンセル</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quality Check Modal (Phase 5) -->
+        <div id="qualityCheckModal" class="modal" style="display: none;">
+            <div class="modal-content quality-check-modal">
+                <h2>⚠️ チャート品質の確認</h2>
+                <div class="quality-check-body">
+                    <div class="quality-section">
+                        <h3>警告事項</h3>
+                        <div id="qualityWarnings" class="quality-warnings"></div>
+                    </div>
+                    
+                    <div class="quality-section">
+                        <h3>推奨事項</h3>
+                        <div id="qualitySuggestions" class="quality-suggestions"></div>
+                    </div>
+                    
+                    <div class="quality-note">
+                        <p><strong>💡 なぜ品質チェックが必要？</strong></p>
+                        <p>GPT-4o Vision APIはAIが画像を見てチャートを分析します。ローソク足が少なすぎる、またはチャートが縮小されすぎていると、AIがパターンを認識できず、無駄なコスト（約1.75～3.5円/回）が発生する可能性があります。</p>
+                    </div>
+                    
+                    <div class="quality-check-options">
+                        <label>
+                            <input type="checkbox" id="qualityDontShowAgain" />
+                            今後、データが十分な場合はこの警告を表示しない
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="modal-actions">
+                    <button id="qualityCancelBtn" class="btn-secondary">キャンセル</button>
+                    <button id="qualityContinueBtn" class="btn-primary">このまま分析を実行</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Vision Guide Modal (Phase 5 - First Time) -->
+        <div id="visionGuideModal" class="modal" style="display: none;">
+            <div class="modal-content vision-guide-modal">
+                <h2>👁️ Vision AI チャート分析 ガイド</h2>
+                <div class="guide-body">
+                    <div class="guide-section">
+                        <h3>📊 推奨されるチャート設定</h3>
+                        <ul>
+                            <li><strong>データ期間（Range）</strong>: 5 Days 以上を推奨</li>
+                            <li><strong>ローソク足数</strong>: 100本以上（最低50本）</li>
+                            <li><strong>通常モード</strong>: 200本まで（推奨）</li>
+                            <li><strong>高解像度モード</strong>: 500本まで（コスト2倍）</li>
+                            <li><strong>チャート拡大</strong>: ローソク足の形が明確に見える程度に拡大</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="guide-section">
+                        <h3>🔍 分析の手順</h3>
+                        <ol>
+                            <li>左側パネルで銘柄と時間軸を選択</li>
+                            <li>Rangeを「5 Days」または「1 Week」に設定</li>
+                            <li>「Load Data」ボタンでデータを読み込み</li>
+                            <li>マウスホイールでチャートを適切に拡大</li>
+                            <li>必要に応じてインジケーターを追加</li>
+                            <li>「Analyze Chart」ボタンで分析実行</li>
+                        </ol>
+                    </div>
+                    
+                    <div class="guide-section">
+                        <h3>💰 コスト情報（GPT-4o）</h3>
+                        <ul>
+                            <li><strong>通常モード</strong>: 1024×576px</li>
+                            <li><strong>高解像度モード</strong>: 2048×1152px</li>
+                            <li><strong>Ask AI</strong>: 約1.5円/回</li>
+                        </ul>
+                        <p style="font-size: 0.85rem; color: #8891a3; margin-top: 10px;">
+                            高解像度モードは200本以上のローソク足を分析する際や、より細かいパターン認識が必要な場合にお勧めします。
+                        </p>
+                    </div>
+                    
+                    <div class="guide-note">
+                        <p><strong>⚠️ 重要</strong>: 本システムの分析結果は教育目的の参考情報です。投資判断は自己責任で行ってください。</p>
+                    </div>
+                    
+                    <div class="quality-check-options">
+                        <label>
+                            <input type="checkbox" id="guideDontShowAgain" />
+                            今後このガイドを表示しない
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="modal-actions">
+                    <button id="guideCloseBtn" class="btn-primary">了解しました</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Disclaimer Modal (Phase 5) -->
+        <div id="disclaimerModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <h2>⚠️ 重要なお知らせ</h2>
+                <div class="disclaimer-text">
+                    <p><strong>本システムのAI分析機能は教育目的の参考情報です。</strong></p>
+                    <p>以下の点をご理解の上、ご利用ください：</p>
+                    <ul>
+                        <li>投資助言業の登録はありません</li>
+                        <li>分析結果は投資判断を推奨するものではありません</li>
+                        <li>最終的な投資判断は必ずご自身の責任で行ってください</li>
+                        <li>過去の分析結果は将来の成果を保証しません</li>
+                    </ul>
+                    <div class="disclaimer-checkbox">
+                        <label>
+                            <input type="checkbox" id="agreeDisclaimer">
+                            上記の内容を理解し、同意します
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button id="cancelDisclaimer" class="btn-secondary">キャンセル</button>
+                    <button id="acceptDisclaimer" class="btn-primary" disabled>同意して続ける</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+# Trading Platform - Python Dependencies
+# Python 3.13 compatible
+
+# Core dependencies
+numpy>=1.26.0
+pandas>=2.1.0
+
+# Technical Analysis Library
+TA-Lib==0.6.7
+
+# Optional: Future AI integration
+# openai>=1.54.4
+# python-dotenv>=1.0.0
