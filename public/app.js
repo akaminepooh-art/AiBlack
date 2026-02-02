@@ -1011,60 +1011,96 @@ function getParameterValues(container) {
 
 // ===== Add Indicator with Parameters =====
 async function addIndicatorWithParams(indicatorName, params, metadata) {
-    const btn = document.getElementById('addIndicatorBtn');
-    const originalText = btn.textContent;
-    btn.textContent = '⏳ Calculating...';
-    btn.disabled = true;
-
     try {
-        console.log(`Adding indicator: ${indicatorName}`, params);
+        console.log('Adding indicator:', indicatorName, params);
         
-        // Prepare request
-        const requestData = {
-            name: indicatorName,
-            candleData: currentData,
-            params: params,
-            metadata: {
-                symbol: currentSymbol,
-                interval: currentInterval
-            }
-        };
-
-        const response = await fetch(`${API_BASE}/indicator/execute`, {
+        if (!currentData || currentData.length === 0) {
+            throw new Error('No chart data available. Please load market data first.');
+        }
+        
+        console.log(`Calling API: ${API_BASE}/indicator/calculate`);
+        console.log('Request body:', {
+            indicator: indicatorName,
+            candles: currentData.slice(0, 3), // 最初の3件のみログ出力
+            parameters: params
+        });
+        
+        // APIでインジケーターを計算
+        const response = await fetch(`${API_BASE}/indicator/calculate`, {  // ✅ /calculate に変更
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestData)
+            body: JSON.stringify({
+                indicator: indicatorName,
+                candles: currentData,
+                parameters: params
+            })
         });
-
-        const result = await response.json();
-
-        if (!result.success) {
-            throw new Error(result.error || 'Indicator calculation failed');
-        }
-
-        // Add indicator to chart
-        addIndicatorToChart(indicatorName, result, metadata, params);
-
-        // Add to active list
-        activeIndicators.set(indicatorName, {
-            metadata,
-            result,
-            params
-        });
-
-        updateActiveIndicatorsList();
         
-        console.log(`✅ Indicator added: ${indicatorName}`, result);
-
+        console.log(`API response status: ${response.status}`);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('API error response:', errorText);
+            throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+        }
+        
+        const result = await response.json();
+        console.log('API response data:', result);
+        
+        if (!result.success) {
+            throw new Error(result.error || result.message || 'Failed to calculate indicator');
+        }
+        
+        // インジケーターの結果を処理
+        const indicatorData = {
+            name: indicatorName,
+            displayName: metadata.displayName || indicatorName.toUpperCase(),
+            parameters: params,
+            displayType: result.displayType || 'single-line',
+            values: result.values || [],
+            lineConfig: result.lineConfig || { color: getRandomColor(), lineWidth: 2 },
+            metadata: result.metadata || {}
+        };
+        
+        console.log('Indicator data to add:', indicatorData);
+        
+        // インジケーターをチャートに追加
+        if (indicatorData.displayType === 'single-line') {
+            addLineIndicator(indicatorData);
+        } else if (indicatorData.displayType === 'multi-line') {
+            addMultiLineIndicator(indicatorData);
+        } else if (indicatorData.displayType === 'histogram') {
+            addHistogramIndicator(indicatorData);
+        } else if (indicatorData.displayType === 'band') {
+            addBandIndicator(indicatorData);
+        } else {
+            console.warn(`Unknown display type: ${indicatorData.displayType}, defaulting to single-line`);
+            addLineIndicator(indicatorData);
+        }
+        
+        console.log(`✅ Indicator ${indicatorName} added successfully`);
+        
     } catch (error) {
         console.error(`❌ Failed to add indicator: ${indicatorName}`, error);
-        alert(`⚠️ Error: ${error.message}`);
-    } finally {
-        btn.textContent = originalText;
-        btn.disabled = false;
-        document.getElementById('indicatorSelect').value = '';
+        alert(`⚠️ Failed to add indicator ${indicatorName}: ${error.message}`);
     }
 }
+
+// ヘルパー関数: ランダムカラー生成
+function getRandomColor() {
+    const colors = [
+        '#2196F3', // Blue
+        '#4CAF50', // Green
+        '#FF9800', // Orange
+        '#9C27B0', // Purple
+        '#F44336', // Red
+        '#00BCD4', // Cyan
+        '#FFEB3B', // Yellow
+        '#E91E63'  // Pink
+    ];
+    return colors[Math.floor(Math.random() * colors.length)];
+}
+
 
 // ===== Add Indicator to Chart =====
 function addIndicatorToChart(name, result, metadata, params) {
