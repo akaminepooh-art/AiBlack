@@ -380,97 +380,28 @@ async function loadAvailableIndicators() {
     try {
         console.log('Loading available indicators...');
         const response = await fetch(`${API_BASE}/indicator/metadata`);
-        const result = await response.json();
         
-        console.log('Indicators metadata:', result);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         
-        // レスポンス形式のチェック
-        if (!result || typeof result !== 'object') {
+        const data = await response.json();
+        console.log('Indicators metadata:', data);
+        
+        if (data.success && data.indicators) {
+            availableIndicators = data.indicators;
+            populateIndicatorSelect(data.indicators);
+            console.log(`✅ Loaded ${data.indicators.length} indicators`);
+        } else {
             throw new Error('Invalid response format');
         }
-        
-        // success プロパティをチェック
-        if (result.success === false) {
-            throw new Error(result.message || 'Failed to load indicators');
-        }
-        
-        // data プロパティからメタデータを取得
-        const metadata = result.data || result;
-        
-        // メタデータが空でないかチェック
-        if (!metadata || typeof metadata !== 'object' || Object.keys(metadata).length === 0) {
-            throw new Error('No indicators available');
-        }
-        
-        // INDICATOR_CONFIGSを更新
-        Object.keys(metadata).forEach(key => {
-            const indicator = metadata[key];
-            INDICATOR_CONFIGS[key] = {
-                name: indicator.name,
-                displayName: indicator.fullName,
-                category: indicator.category,
-                parameters: indicator.parameters || []
-            };
-        });
-        
-        console.log(`✅ Loaded ${Object.keys(metadata).length} indicators`);
-        console.log('Available indicators:', Object.keys(INDICATOR_CONFIGS));
-        
     } catch (error) {
         console.error('Failed to load indicators:', error);
+        // フォールバック: 固定のINDICATOR_CONFIGSを使用
         console.warn('⚠️ Falling back to static INDICATOR_CONFIGS');
-        
-        // 静的な設定をフォールバック
-        if (!INDICATOR_CONFIGS || Object.keys(INDICATOR_CONFIGS).length === 0) {
-            INDICATOR_CONFIGS = {
-                sma: {
-                    name: 'sma',
-                    displayName: 'Simple Moving Average',
-                    category: 'trend',
-                    parameters: [
-                        { name: 'period', type: 'number', default: 20, min: 2, max: 200 }
-                    ]
-                },
-                ema: {
-                    name: 'ema',
-                    displayName: 'Exponential Moving Average',
-                    category: 'trend',
-                    parameters: [
-                        { name: 'period', type: 'number', default: 20, min: 2, max: 200 }
-                    ]
-                },
-                rsi: {
-                    name: 'rsi',
-                    displayName: 'Relative Strength Index',
-                    category: 'momentum',
-                    parameters: [
-                        { name: 'period', type: 'number', default: 14, min: 2, max: 100 }
-                    ]
-                },
-                macd: {
-                    name: 'macd',
-                    displayName: 'MACD',
-                    category: 'momentum',
-                    parameters: [
-                        { name: 'fastPeriod', type: 'number', default: 12, min: 2, max: 100 },
-                        { name: 'slowPeriod', type: 'number', default: 26, min: 2, max: 100 },
-                        { name: 'signalPeriod', type: 'number', default: 9, min: 2, max: 100 }
-                    ]
-                },
-                bollinger: {
-                    name: 'bollinger',
-                    displayName: 'Bollinger Bands',
-                    category: 'volatility',
-                    parameters: [
-                        { name: 'period', type: 'number', default: 20, min: 2, max: 200 },
-                        { name: 'stdDev', type: 'number', default: 2, min: 1, max: 3 }
-                    ]
-                }
-            };
-        }
+        populateIndicatorSelectFallback();
     }
 }
-
 
 // ===== Populate Indicator Select (Dynamic) =====
 function populateIndicatorSelect(indicators) {
@@ -780,60 +711,20 @@ async function addIndicator() {
 }
 
 // ===== Show Parameter Dialog =====
-// ===== Show Parameter Dialog =====
 async function showParameterDialog(indicatorName, preloadedMetadata = null, currentParams = null, isEditMode = false) {
     try {
-        console.log(`showParameterDialog called: ${indicatorName}, isEditMode: ${isEditMode}`);
-        
         // インジケーターのメタデータを取得
         let indicatorMetadata = preloadedMetadata || availableIndicators.find(ind => ind.name === indicatorName);
         
         if (!indicatorMetadata) {
-            console.log(`Metadata not found in availableIndicators, fetching from API for ${indicatorName}`);
-            
             // フォールバック: APIから直接取得
             const response = await fetch(`${API_BASE}/indicator/metadata/${indicatorName}`);
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const result = await response.json();
-            console.log(`API response for ${indicatorName}:`, result);
-            
-            if (result.success && result.data) {
-                // APIから取得したメタデータを適切な形式に変換
-                const apiMetadata = result.data;
-                indicatorMetadata = {
-                    name: apiMetadata.name,
-                    displayName: apiMetadata.fullName,
-                    version: '1.0.0', // デフォルトバージョン
-                    parameters: apiMetadata.parameters || []
-                };
+            const data = await response.json();
+            if (data.success && data.indicator) {
+                indicatorMetadata = data.indicator;
             } else {
-                throw new Error('Failed to load indicator metadata from API');
+                throw new Error('Failed to load indicator metadata');
             }
-        }
-        
-        console.log(`Using metadata for ${indicatorName}:`, indicatorMetadata);
-        
-        // メタデータが不完全な場合、INDICATOR_CONFIGSからフォールバック
-        if (!indicatorMetadata.parameters || indicatorMetadata.parameters.length === 0) {
-            console.warn(`No parameters in metadata, checking INDICATOR_CONFIGS for ${indicatorName}`);
-            
-            if (INDICATOR_CONFIGS && INDICATOR_CONFIGS[indicatorName]) {
-                indicatorMetadata = {
-                    name: indicatorName,
-                    displayName: INDICATOR_CONFIGS[indicatorName].displayName,
-                    version: '1.0.0',
-                    parameters: INDICATOR_CONFIGS[indicatorName].parameters || []
-                };
-            }
-        }
-        
-        // それでもパラメータがない場合
-        if (!indicatorMetadata.parameters || indicatorMetadata.parameters.length === 0) {
-            throw new Error(`No parameters defined for indicator '${indicatorName}'`);
         }
         
         // ダイアログを作成
@@ -848,7 +739,7 @@ async function showParameterDialog(indicatorName, preloadedMetadata = null, curr
         header.className = 'parameter-dialog-header';
         header.innerHTML = `
             <h3>${isEditMode ? '✏️' : '📊'} ${indicatorMetadata.displayName}</h3>
-            <p>${indicatorMetadata.name.toUpperCase()} - v${indicatorMetadata.version || '1.0.0'}${isEditMode ? ' (Editing)' : ''}</p>
+            <p>${indicatorMetadata.name.toUpperCase()} - v${indicatorMetadata.version}${isEditMode ? ' (Editing)' : ''}</p>
         `;
         dialog.appendChild(header);
         
@@ -875,8 +766,7 @@ async function showParameterDialog(indicatorName, preloadedMetadata = null, curr
         cancelBtn.onclick = () => {
             overlay.remove();
             if (!isEditMode) {
-                const selectElement = document.getElementById('indicatorSelect');
-                if (selectElement) selectElement.value = '';
+                document.getElementById('indicatorSelect').value = '';
             }
         };
         
@@ -885,7 +775,6 @@ async function showParameterDialog(indicatorName, preloadedMetadata = null, curr
         actionBtn.textContent = isEditMode ? '💾 Update Indicator' : '✅ Add Indicator';
         actionBtn.onclick = async () => {
             const params = getParameterValues(fieldsContainer);
-            console.log(`${isEditMode ? 'Updating' : 'Adding'} indicator ${indicatorName} with params:`, params);
             overlay.remove();
             
             if (isEditMode) {
@@ -909,8 +798,7 @@ async function showParameterDialog(indicatorName, preloadedMetadata = null, curr
             if (e.key === 'Escape') {
                 overlay.remove();
                 if (!isEditMode) {
-                    const selectElement = document.getElementById('indicatorSelect');
-                    if (selectElement) selectElement.value = '';
+                    document.getElementById('indicatorSelect').value = '';
                 }
                 document.removeEventListener('keydown', escHandler);
             }
@@ -920,11 +808,9 @@ async function showParameterDialog(indicatorName, preloadedMetadata = null, curr
     } catch (error) {
         console.error('Failed to show parameter dialog:', error);
         alert(`⚠️ Error: ${error.message}`);
-        const selectElement = document.getElementById('indicatorSelect');
-        if (selectElement) selectElement.value = '';
+        document.getElementById('indicatorSelect').value = '';
     }
 }
-
 
 // ===== Create Parameter Field =====
 function createParameterField(param, currentValue = null) {
@@ -1011,96 +897,60 @@ function getParameterValues(container) {
 
 // ===== Add Indicator with Parameters =====
 async function addIndicatorWithParams(indicatorName, params, metadata) {
+    const btn = document.getElementById('addIndicatorBtn');
+    const originalText = btn.textContent;
+    btn.textContent = '⏳ Calculating...';
+    btn.disabled = true;
+
     try {
-        console.log('Adding indicator:', indicatorName, params);
+        console.log(`Adding indicator: ${indicatorName}`, params);
         
-        if (!currentData || currentData.length === 0) {
-            throw new Error('No chart data available. Please load market data first.');
-        }
-        
-        console.log(`Calling API: ${API_BASE}/indicator/calculate`);
-        console.log('Request body:', {
-            indicator: indicatorName,
-            candles: currentData.slice(0, 3), // 最初の3件のみログ出力
-            parameters: params
-        });
-        
-        // APIでインジケーターを計算
-        const response = await fetch(`${API_BASE}/indicator/calculate`, {  // ✅ /calculate に変更
+        // Prepare request
+        const requestData = {
+            name: indicatorName,
+            candleData: currentData,
+            params: params,
+            metadata: {
+                symbol: currentSymbol,
+                interval: currentInterval
+            }
+        };
+
+        const response = await fetch(`${API_BASE}/indicator/execute`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                indicator: indicatorName,
-                candles: currentData,
-                parameters: params
-            })
+            body: JSON.stringify(requestData)
         });
-        
-        console.log(`API response status: ${response.status}`);
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('API error response:', errorText);
-            throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
-        }
-        
+
         const result = await response.json();
-        console.log('API response data:', result);
-        
+
         if (!result.success) {
-            throw new Error(result.error || result.message || 'Failed to calculate indicator');
+            throw new Error(result.error || 'Indicator calculation failed');
         }
+
+        // Add indicator to chart
+        addIndicatorToChart(indicatorName, result, metadata, params);
+
+        // Add to active list
+        activeIndicators.set(indicatorName, {
+            metadata,
+            result,
+            params
+        });
+
+        updateActiveIndicatorsList();
         
-        // インジケーターの結果を処理
-        const indicatorData = {
-            name: indicatorName,
-            displayName: metadata.displayName || indicatorName.toUpperCase(),
-            parameters: params,
-            displayType: result.displayType || 'single-line',
-            values: result.values || [],
-            lineConfig: result.lineConfig || { color: getRandomColor(), lineWidth: 2 },
-            metadata: result.metadata || {}
-        };
-        
-        console.log('Indicator data to add:', indicatorData);
-        
-        // インジケーターをチャートに追加
-        if (indicatorData.displayType === 'single-line') {
-            addLineIndicator(indicatorData);
-        } else if (indicatorData.displayType === 'multi-line') {
-            addMultiLineIndicator(indicatorData);
-        } else if (indicatorData.displayType === 'histogram') {
-            addHistogramIndicator(indicatorData);
-        } else if (indicatorData.displayType === 'band') {
-            addBandIndicator(indicatorData);
-        } else {
-            console.warn(`Unknown display type: ${indicatorData.displayType}, defaulting to single-line`);
-            addLineIndicator(indicatorData);
-        }
-        
-        console.log(`✅ Indicator ${indicatorName} added successfully`);
-        
+        console.log(`✅ Indicator added: ${indicatorName}`, result);
+
     } catch (error) {
         console.error(`❌ Failed to add indicator: ${indicatorName}`, error);
-        alert(`⚠️ Failed to add indicator ${indicatorName}: ${error.message}`);
+        alert(`⚠️ Error: ${error.message}`);
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+        document.getElementById('indicatorSelect').value = '';
     }
 }
-
-// ヘルパー関数: ランダムカラー生成
-function getRandomColor() {
-    const colors = [
-        '#2196F3', // Blue
-        '#4CAF50', // Green
-        '#FF9800', // Orange
-        '#9C27B0', // Purple
-        '#F44336', // Red
-        '#00BCD4', // Cyan
-        '#FFEB3B', // Yellow
-        '#E91E63'  // Pink
-    ];
-    return colors[Math.floor(Math.random() * colors.length)];
-}
-
 
 // ===== Add Indicator to Chart =====
 function addIndicatorToChart(name, result, metadata, params) {

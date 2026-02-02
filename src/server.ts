@@ -111,7 +111,8 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 // サーバー起動
-const PORT = parseInt(process.env.PORT || '10000', 10);
+//const PORT = parseInt(process.env.PORT || '10000', 10);
+const PORT = parseInt(process.env.PORT || '3001', 10);
 const HOST = '0.0.0.0';
 
 console.log('========================================');
