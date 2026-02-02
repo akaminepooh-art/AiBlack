@@ -76,18 +76,40 @@ app.use(errorHandler);
 // サーバー起動
 // Renderは自動的にPORTを設定するため、process.env.PORTを優先
 const PORT = parseInt(process.env.PORT || env.PORT?.toString() || '10000', 10);
-const HOST = process.env.RENDER ? '0.0.0.0' : (env.HOST || 'localhost');
+const HOST = '0.0.0.0'; // すべてのネットワークインターフェースで受信
 
-app.listen(PORT, HOST, () => {
-  logger.info('='.repeat(50));
-  logger.info('Trading Platform Server Started');
-  logger.info('='.repeat(50));
-  logger.info(`Environment: ${env.NODE_ENV}`);
-  logger.info(`Server: http://${HOST}:${PORT}`);
-  logger.info(`API Base: http://${HOST}:${PORT}/api`);
-  logger.info(`Cache: ${env.CACHE_ENABLED ? 'Enabled' : 'Disabled'}`);
-  logger.info('='.repeat(50));
-});
+// デバッグログ
+console.log('='.repeat(50));
+console.log('Server Configuration:');
+console.log(`process.env.PORT: ${process.env.PORT}`);
+console.log(`env.PORT: ${env.PORT}`);
+console.log(`Final PORT: ${PORT}`);
+console.log(`Final HOST: ${HOST}`);
+console.log('='.repeat(50));
+
+try {
+  const server = app.listen(PORT, HOST, () => {
+    logger.info('='.repeat(50));
+    logger.info('Trading Platform Server Started');
+    logger.info('='.repeat(50));
+    logger.info(`Environment: ${env.NODE_ENV}`);
+    logger.info(`Server: http://${HOST}:${PORT}`);
+    logger.info(`API Base: http://${HOST}:${PORT}/api`);
+    logger.info(`Cache: ${env.CACHE_ENABLED ? 'Enabled' : 'Disabled'}`);
+    logger.info('='.repeat(50));
+  });
+
+  server.on('error', (error: any) => {
+    logger.error('Server failed to start:', error);
+    if (error.code === 'EADDRINUSE') {
+      logger.error(`Port ${PORT} is already in use`);
+    }
+    process.exit(1);
+  });
+} catch (error) {
+  logger.error('Failed to start server:', error);
+  process.exit(1);
+}
 
 // グレースフルシャットダウン
 const shutdown = (signal: string): void => {
