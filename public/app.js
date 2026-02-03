@@ -2986,3 +2986,126 @@ window.addEventListener('DOMContentLoaded', () => {
         console.log('✅ Logout button initialized');
     }
 });
+
+// ========================================
+// Phase 1: Vision AI Result Modal
+// ========================================
+
+/**
+ * Show Vision AI result in a modal
+ */
+function showVisionResultModal(title, content) {
+    // Create modal if not exists
+    let modal = document.getElementById('visionResultModal');
+    
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'visionResultModal';
+        modal.className = 'vision-result-modal';
+        modal.innerHTML = `
+            <div class="vision-result-content">
+                <div class="vision-result-header">
+                    <h2 class="vision-result-title" id="visionResultTitle"></h2>
+                    <button class="vision-result-close" id="visionResultClose">×</button>
+                </div>
+                <div class="vision-result-body" id="visionResultBody"></div>
+                <div class="vision-result-footer">
+                    <button class="vision-result-btn vision-result-btn-copy" id="visionResultCopy">
+                        📋 Copy Text
+                    </button>
+                    <button class="vision-result-btn vision-result-btn-close" id="visionResultCloseBtn">
+                        ✕ Close
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        
+        // Event listeners
+        document.getElementById('visionResultClose').addEventListener('click', closeVisionResultModal);
+        document.getElementById('visionResultCloseBtn').addEventListener('click', closeVisionResultModal);
+        document.getElementById('visionResultCopy').addEventListener('click', copyVisionResult);
+        
+        // Close on background click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                closeVisionResultModal();
+            }
+        });
+        
+        // Close on ESC key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && modal.classList.contains('active')) {
+                closeVisionResultModal();
+            }
+        });
+    }
+    
+    // Set content
+    document.getElementById('visionResultTitle').textContent = title;
+    document.getElementById('visionResultBody').textContent = content;
+    
+    // Show modal
+    modal.classList.add('active');
+    document.body.style.overflow = 'hidden'; // Prevent background scroll
+}
+
+/**
+ * Close Vision AI result modal
+ */
+function closeVisionResultModal() {
+    const modal = document.getElementById('visionResultModal');
+    if (modal) {
+        modal.classList.remove('active');
+        document.body.style.overflow = ''; // Restore scroll
+    }
+}
+
+/**
+ * Copy Vision AI result to clipboard
+ */
+async function copyVisionResult() {
+    const content = document.getElementById('visionResultBody').textContent;
+    
+    try {
+        await navigator.clipboard.writeText(content);
+        
+        // Show feedback
+        const btn = document.getElementById('visionResultCopy');
+        const originalText = btn.textContent;
+        btn.textContent = '✓ Copied!';
+        btn.style.background = '#4CAF50';
+        
+        setTimeout(() => {
+            btn.textContent = originalText;
+            btn.style.background = '';
+        }, 2000);
+    } catch (error) {
+        console.error('Failed to copy:', error);
+        alert('Failed to copy to clipboard');
+    }
+}
+
+// ========================================
+// Override Vision AI result display functions
+// ========================================
+
+// Store original function if exists
+const originalDisplayVisionResult = window.displayVisionResult;
+
+/**
+ * Display Vision AI result in modal (override)
+ */
+window.displayVisionResult = function(result, type = 'Quick Analysis') {
+    if (result && result.length > 0) {
+        showVisionResultModal(type, result);
+    }
+    
+    // Also call original function if exists (for backward compatibility)
+    if (typeof originalDisplayVisionResult === 'function') {
+        originalDisplayVisionResult(result, type);
+    }
+};
+
+console.log('✅ Phase 1: Mobile Emergency Fixes loaded');
+
