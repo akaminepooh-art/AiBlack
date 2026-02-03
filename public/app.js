@@ -1241,8 +1241,8 @@ async function updateIndicatorWithParams(indicatorName, newParams, metadata) {
 function updateActiveIndicatorsList() {
     const container = document.getElementById('activeIndicatorsList');
     
-    // activeIndicatorsがObjectの場合
-    const indicatorKeys = Object.keys(activeIndicators);
+    // activeIndicatorsがMapの場合
+    const indicatorKeys = Array.from(activeIndicators.keys());
     
     if (indicatorKeys.length === 0) {
         container.innerHTML = '<div class="no-indicators">No indicators added yet</div>';
@@ -1252,22 +1252,23 @@ function updateActiveIndicatorsList() {
     container.innerHTML = '';
 
     indicatorKeys.forEach((key) => {
-        const indicator = activeIndicators[key];
-        const name = indicator.name;
+        const indicator = activeIndicators.get(key);
+        const metadata = indicator.metadata;
         const params = indicator.params;
+        const name = metadata?.name || key;
         
         let paramText = '';
-        if (key.startsWith('sma') || key.startsWith('ema')) {
+        if (name === 'sma' || name === 'ema') {
             paramText = `(${params.period})`;
-        } else if (key.startsWith('rsi')) {
+        } else if (name === 'rsi') {
             paramText = `(${params.period})`;
-        } else if (key.startsWith('macd')) {
+        } else if (name === 'macd') {
             paramText = `(${params.fastPeriod},${params.slowPeriod},${params.signalPeriod})`;
-        } else if (key.startsWith('bollinger')) {
+        } else if (name === 'bollinger') {
             paramText = `(${params.period},${params.stdDev})`;
-        } else if (key.startsWith('atr')) {
+        } else if (name === 'atr') {
             paramText = `(${params.period}): ${indicator.value?.toFixed(4) || 'N/A'}`;
-        } else if (key.startsWith('adx')) {
+        } else if (name === 'adx') {
             paramText = `(${params.period}): ${indicator.value?.toFixed(2) || 'N/A'}`;
         }
 
@@ -1275,12 +1276,12 @@ function updateActiveIndicatorsList() {
         item.className = 'indicator-item';
         
         // ATR/ADXは表示専用（削除ボタンなし）
-        const isReadonly = key.startsWith('atr') || key.startsWith('adx');
+        const isReadonly = name === 'atr' || name === 'adx';
         
         item.innerHTML = `
             <div class="indicator-info" ${isReadonly ? '' : `data-indicator="${key}" style="cursor: pointer;" title="Click to edit"`}>
-                <div class="indicator-color" style="background-color: ${INDICATOR_CONFIGS[name.toLowerCase()]?.color || '#999'}"></div>
-                <span class="indicator-name">${name}</span>
+                <div class="indicator-color" style="background-color: ${params.color || '#999'}"></div>
+                <span class="indicator-name">${metadata?.displayName || name.toUpperCase()}</span>
                 <span class="indicator-params">${paramText}</span>
             </div>
             ${isReadonly ? '<span class="indicator-readonly-badge">📊 Auto</span>' : `<button class="remove-indicator-btn" data-indicator="${key}" title="Remove">×</button>`}
@@ -1304,6 +1305,7 @@ function updateActiveIndicatorsList() {
         container.appendChild(item);
     });
 }
+
 
 // ===== Chart Capture Feature =====
 const CAPTURE_WIDTH = 1024;
